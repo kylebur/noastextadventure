@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Canvas Text Adventure - Expanded</title>
+    <title>Canvas Text Adventure - The Thorne Mystery</title>
     <style>
         /* Basic styling for the page */
         body {
@@ -68,11 +68,41 @@
             width: 800px;
             max-width: 100%;
         }
+         /* Style for Game Over / Win messages */
+        .game-end-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.85);
+            color: #ffdddd;
+            padding: 40px;
+            border: 2px solid #880000;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 1.5em;
+            z-index: 10; /* Ensure it's on top */
+        }
+         .game-win-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(20, 40, 20, 0.9);
+            color: #ddffdd;
+            padding: 40px;
+            border: 2px solid #008800;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 1.5em;
+            z-index: 10;
+        }
     </style>
 </head>
 <body>
-
-    <canvas id="gameCanvas" width="800" height="450"></canvas>
+    <div id="game-container" style="position: relative;">
+        <canvas id="gameCanvas" width="800" height="450"></canvas>
+        </div>
 
     <div id="input-area">
         <input type="text" id="commandInput" placeholder="Type command (e.g., 'go north', 'take key', 'look')">
@@ -80,7 +110,7 @@
     </div>
 
     <div id="instructions">
-        Use commands like: <b>go [direction]</b> (or N, S, E, W), <b>look</b>, <b>examine [item/object]</b>, <b>take [item]</b>, <b>inventory</b> (or i). Press Enter or click the button to submit. Arrow keys still work for movement!
+        Use commands like: <b>go [dir]</b> (or N, S, E, W, U, D), <b>look</b>, <b>examine [thing]</b>, <b>take [item]</b>, <b>use [item]</b> (on [thing]), <b>read [item]</b>, <b>inventory</b> (or i). Arrow keys also work for movement. Be wary of lingering...
     </div>
 
 <script>
@@ -89,187 +119,322 @@
     const ctx = canvas.getContext('2d');
     const commandInput = document.getElementById('commandInput');
     const submitButton = document.getElementById('submitButton');
+    const gameContainer = document.getElementById('game-container');
 
     // --- Game Data: Rooms, Items, Actions ---
+    // (Room data remains unchanged)
     const rooms = {
         'start': {
             id: 'start',
             name: 'The Dusty Storeroom',
-            description: "You find yourself in a small, dusty storeroom. Cobwebs hang thickly in the corners. Light filters weakly through a grimy window high on the wall. There's a wooden door to the NORTH and an archway leading EAST. A small, rusty KEY lies on a crate.",
+            description: "You are in a small, dusty storeroom. Cobwebs hang thickly in the corners, undisturbed for years. Faint light filters through a grimy window high on the wall. There's a sturdy wooden door NORTH and an archway EAST. A small, oddly cold KEY lies on a crate.",
             exits: { 'north': 'corridor', 'east': 'workshop', 'south': null, 'west': null },
-            items: ['key'], // Items currently in the room
-            objects: {'crate': "A sturdy wooden crate. The key was resting on it.", 'window': "Too high and grimy to see through clearly."} // Scenery objects to examine
+            items: ['key'],
+            objects: {'crate': "A plain wooden crate. The key felt strangely cold to the touch.", 'window': "Too high and grimy to see through clearly.", 'cobwebs': "Thick and ancient. No spiders in sight, oddly."}
         },
         'corridor': {
             id: 'corridor',
             name: 'Narrow Corridor',
-            description: "A long, narrow corridor stretches before you. The floorboards creak underfoot. Doors line the walls to the WEST and EAST. A faint draft comes from the NORTH, where you see rickety stairs leading up. The storeroom is SOUTH.",
+            description: "A long, narrow corridor stretches before you. The floorboards creak underfoot, echoing slightly too much. Doors line the walls to the WEST and EAST. A distinct cold draft comes from the NORTH, where rickety stairs lead up into darkness. The storeroom is SOUTH.",
             exits: { 'north': 'attic_stairs', 'east': 'library', 'south': 'start', 'west': 'pantry' },
             items: [],
-            objects: {'floorboards': "They look old and worn. One near the north end seems slightly loose.", 'draft': "It seems to be coming from upstairs."}
+            objects: {'floorboards': "Old and worn. One near the north end looks loose, perhaps pried before?", 'draft': "Definitely colder than the rest of the house, emanating from the attic stairs.", 'doors': "Plain wooden doors, closed."}
         },
         'pantry': {
             id: 'pantry',
             name: 'Empty Pantry',
-            description: "This was once a pantry, but the shelves are bare except for a thick layer of dust and a few broken jars. An old, unlit LANTERN sits on a bottom shelf. The corridor is back to the EAST.",
+            description: "This was once a pantry. Shelves are mostly bare, coated in dust. A few broken jars litter the floor. An old, tarnished brass LANTERN sits on a bottom shelf, surprisingly intact.",
             exits: { 'north': null, 'east': 'corridor', 'south': null, 'west': null },
             items: ['lantern'],
-            objects: {'shelves': "Mostly empty, covered in dust.", 'jars': "Broken remnants of preserves, long gone."}
+            objects: {'shelves': "Covered in dust. Faint scratch marks are visible on one.", 'jars': "Broken remnants of preserves. They smell faintly metallic."}
         },
         'library': {
             id: 'library',
             name: 'Quiet Library',
-            description: "Tall bookshelves filled with leather-bound books dominate this room. A large, ornate desk sits near a window overlooking a gloomy courtyard. A heavy BOOK with a strange symbol lies open on the desk. An exit leads WEST back to the corridor. There's another door to the NORTH.",
+            description: "Tall bookshelves filled with leather-bound books dominate this room. The air is heavy with the smell of old paper and something else... ozone? A large, ornate desk sits near a window overlooking a gloomy courtyard. A heavy BOOK with a strange spiral symbol lies open on the desk. An exit leads WEST. Another door is NORTH.",
             exits: { 'north': 'study', 'east': null, 'south': null, 'west': 'corridor' },
             items: ['book'],
-            objects: {'bookshelves': "Many books look interesting, but most are crumbling.", 'desk': "A grand oak desk, surprisingly clean compared to the rest of the room.", 'window': "It overlooks a neglected courtyard garden.", 'symbol': "You recognize the symbol on the book."} // Hinting at the book
+            objects: {'bookshelves': "Many books look interesting, but some titles seem nonsensical or written in unknown scripts.", 'desk': "A grand oak desk. The surface is clear except for the open book.", 'window': "It overlooks a neglected courtyard garden. The glass is strangely warped.", 'symbol': "A complex spiral, it seems to draw the eye inwards."}
         },
         'workshop': {
             id: 'workshop',
             name: 'Abandoned Workshop',
-            description: "Tools hang rusting on the walls, and wood shavings litter the floor around a sturdy workbench. It seems deserted. An archway leads WEST back to the storeroom. A door leads SOUTH out into what looks like a garden.",
+            description: "Tools hang rusting on the walls, though some look unusually modified. Wood shavings litter the floor around a sturdy workbench stained with odd chemicals. An archway leads WEST. A door leads SOUTH to a garden.",
             exits: { 'north': null, 'east': null, 'south': 'garden', 'west': 'start' },
             items: [],
-            objects: {'tools': "Mostly rusted and useless.", 'workbench': "Covered in sawdust and old projects."}
+            objects: {'tools': "Mostly rusted, but some have strange wires or lenses attached.", 'workbench': "Covered in sawdust and scorch marks. Smells faintly of burnt chemicals.", 'stains': "Dark, chemical stains on the workbench and floor."}
         },
         'garden': {
             id: 'garden',
             name: 'Overgrown Garden',
-            description: "Weeds choke tangled rose bushes. A crumbling stone path leads EAST. The workshop door is NORTH. You notice a coil of ROPE half-buried near a large tree.",
-            exits: { 'north': 'workshop', 'east': 'path_end', 'south': null, 'west': null },
+            description: "Weeds choke tangled, thorny bushes. The plants seem unnaturally twisted. A crumbling stone path leads EAST. The workshop door is NORTH. Near a large, gnarled tree, you spot a coil of thick ROPE half-buried. There's also a covered well nearby.",
+            exits: { 'north': 'workshop', 'east': 'path_end', 'south': null, 'west': null }, // Well access via 'use rope on well'
             items: ['rope'],
-            objects: {'weeds': "A dense thicket of unwanted plants.", 'rose bushes': "Thorny and neglected.", 'tree': "A large, ancient-looking oak.", 'path': "Barely visible under the overgrowth."}
+            objects: {'weeds': "A dense thicket. Some seem to pulse slightly.", 'bushes': "The thorns are unusually long and sharp.", 'tree': "A large, ancient-looking oak. Its bark seems to form unsettling patterns.", 'path': "Barely visible under the overgrowth.", 'well': "A circular stone well with a heavy wooden cover."}
         },
         'path_end': {
             id: 'path_end',
             name: 'End of Garden Path',
-            description: "The stone path ends here at a moss-covered wall. There's nowhere else to go but WEST back along the path.",
+            description: "The stone path ends abruptly at a moss-covered wall. The air is still and heavy here. There's nowhere else to go but WEST.",
             exits: { 'north': null, 'east': null, 'south': null, 'west': 'garden' },
             items: [],
-            objects: {'wall': "Old and damp, covered in moss. Seems solid."}
+            objects: {'wall': "Old and damp, covered in thick moss. You feel a faint vibration emanating from it."}
         },
         'study': {
             id: 'study',
             name: 'Dusty Study',
-            description: "A smaller room, clearly a private study. There's a fireplace, a comfortable-looking armchair, and more bookshelves. A locked wooden chest sits beneath the window. The library is SOUTH.",
-            exits: { 'north': null, 'east': null, 'south': 'library', 'west': null },
-            items: [],
-            objects: {'fireplace': "Cold and filled with ash.", 'armchair': "Looks surprisingly inviting.", 'bookshelves': "Contain more specialized texts than the library.", 'chest': "A solid wooden chest, firmly locked."}
-            // Action: 'open chest' needs 'key'
+            description: "A smaller room, clearly a private study. There's a cold fireplace, a comfortable-looking armchair draped in shadow, and more bookshelves holding esoteric texts. A locked wooden chest sits beneath the window. The library is SOUTH. Faint markings cover parts of the floor.",
+            exits: { 'north': null, 'east': null, 'south': 'library', 'west': null }, // Hidden passage via 'examine markings' after map?
+            items: [], // Map appears here after unlocking chest
+            objects: {'fireplace': "Cold and filled with grey ash.", 'armchair': "Looks inviting, but the shadows cling to it.", 'bookshelves': "Contain texts on alchemy, astronomy, and forbidden lore.", 'chest': "A solid wooden chest, firmly locked. It hums faintly.", 'markings': "Faint chalk or paint markings on the floor, partially scuffed."}
         },
         'attic_stairs': {
             id: 'attic_stairs',
             name: 'Rickety Attic Stairs',
-            description: "Narrow, steep stairs covered in dust and cobwebs lead upwards into darkness. It feels unstable. You can go back SOUTH to the corridor.",
-            exits: { 'north': 'attic', 'up': 'attic', 'south': 'corridor', 'down': 'corridor' }, // Added up/down
+            description: "Narrow, steep stairs covered in dust and cobwebs lead upwards into oppressive darkness. Each step groans alarmingly. The cold draft intensifies here. You can go back SOUTH.",
+            exits: { 'north': 'attic', 'up': 'attic', 'south': 'corridor', 'down': 'corridor' },
             items: [],
-            objects: {'stairs': "They creak ominously with every step.", 'darkness': "Impossible to see what's up there."}
-            // Action: Need 'lantern' to proceed safely? Or just describe darkness in the attic.
+            objects: {'stairs': "They feel ready to collapse.", 'darkness': "Almost absolute. You hear faint scratching sounds from above.", 'cobwebs': "Strangely thick and resilient."}
         },
         'attic': {
             id: 'attic',
             name: 'Dark Attic',
-            description: "You are in a large, dark attic space. Shapes loom in the darkness, covered in white sheets. Dust hangs heavy in the air. The stairs lead back DOWN.",
+            description: "You stumble into a large, pitch-black attic space. You can't see a thing! Shapes loom nearby, rustling softly. Dust hangs heavy, choking the air. The stairs lead back DOWN.",
             // Description changes if lantern is lit
             exits: { 'north': null, 'east': null, 'south': null, 'west': null, 'down': 'attic_stairs' },
+            items: [], // Journal page appears here under floorboard
+            objects: {'shapes': "Furniture hidden under dust sheets? They seem to shift.", 'sheets': "Old white dust sheets, stained.", 'dust': "It swirls as if disturbed, even though there's no breeze."}
+            // floorboard object added dynamically when lantern is lit
+        },
+        'well_room': {
+            id: 'well_room',
+            name: 'Bottom of the Well',
+            description: "You've descended into the damp, cold darkness of the well. The air is stale. Slimy bricks line the walls. At the bottom, amidst debris, you see a glint of metal - a discarded STRANGE DEVICE. The only way out is UP the rope.",
+            exits: { 'up': 'garden', 'north': null, 'east': null, 'south': null, 'west': null },
+            items: ['strange_device'],
+            objects: {'bricks': "Cold, damp, and slimy.", 'debris': "Old leaves, mud, and unidentifiable muck.", 'rope': "Hangs down from above, your only way out."}
+        },
+        'hidden_passage': {
+            id: 'hidden_passage',
+            name: 'Hidden Passage',
+            description: "You've discovered a narrow, hidden passage behind the study bookshelf! It's cramped and dusty, sloping downwards to the EAST.",
+            exits: { 'east': 'ritual_chamber', 'west': 'study' }, // Exits back to study
             items: [],
-            objects: {'shapes': "Furniture hidden under dust sheets.", 'sheets': "Old white dust sheets.", 'dust': "It's everywhere, making it hard to breathe."}
+            objects: {'walls': "Rough-hewn stone, clearly artificial.", 'dust': "Thick here, undisturbed for a long time."}
+        },
+        'ritual_chamber': {
+            id: 'ritual_chamber',
+            name: 'Ritual Chamber',
+            description: "The passage opens into a circular chamber. Strange symbols, similar to the one in the book, cover the walls and floor, glowing faintly. In the center is a stone altar. The air crackles with energy. The only exit is WEST.",
+            exits: { 'north': null, 'east': null, 'south': null, 'west': 'hidden_passage' },
+            items: [],
+            objects: {'symbols': "They pulse with a faint, unsettling light. Studying them makes your head ache.", 'altar': "A flat stone slab, stained dark. It feels cold, yet radiates energy.", 'energy': "You feel a strange pressure in the air."}
+            // Win condition: Use 'strange_device' here.
         }
     };
 
     // --- Game State ---
+    // (Game state variables remain unchanged)
     let currentRoomId = 'start';
-    let message = ""; // Feedback messages
-    let inventory = []; // Player's inventory
-    let isLanternLit = false; // State for the lantern
+    let message = "";
+    let inventory = [];
+    let isLanternLit = false;
+    let gameOver = false;
+    let gameWon = false;
+    let lastRoomId = '';
+    let backForthCounter = 0;
+    let monsterPresence = 0;
+    let mapExamined = false;
 
     // --- Game Logic Functions ---
-
-    function getCurrentRoom() {
+    // (getCurrentRoom, endGame, move, look, take, read, showInventory, use, parseCommand remain unchanged)
+    // ... (All functions from previous version included here) ...
+     function getCurrentRoom() {
         return rooms[currentRoomId];
     }
 
+    function endGame(isWin) {
+        gameOver = true; // Stop input processing
+        gameWon = isWin;
+        commandInput.disabled = true;
+        submitButton.disabled = true;
+
+        // Create and display the end message overlay
+        const endMessageDiv = document.createElement('div');
+        if (isWin) {
+            endMessageDiv.className = 'game-win-message';
+            endMessageDiv.innerHTML = "You activate the device on the altar.<br>The symbols flare brightly, then fade.<br>The oppressive energy lifts.<br>You've unraveled the mystery and survived.<br><br><b>YOU WIN!</b><br>(Refresh to play again)";
+        } else {
+            endMessageDiv.className = 'game-end-message';
+            endMessageDiv.innerHTML = "A chilling presence engulfs you.<br>Darkness consumes everything.<br><br><b>GAME OVER</b><br>(Refresh to play again)";
+        }
+        // Check if gameContainer exists before appending
+        if (gameContainer) {
+            gameContainer.appendChild(endMessageDiv);
+        } else {
+            console.error("Game container not found!");
+        }
+
+
+        draw(); // Final draw to show the state before the overlay (optional)
+    }
+
+
     /**
-     * Handles movement commands (go direction, N, S, E, W, up, down).
-     * @param {string} direction - The direction ('north', 'south', etc.) or alias ('n', 's').
+     * Handles movement commands, including monster logic.
      */
     function move(direction) {
+        if (gameOver) return; // Don't allow actions if game is over
+
         const directionMap = { 'n': 'north', 's': 'south', 'e': 'east', 'w': 'west', 'u': 'up', 'd': 'down' };
-        const fullDirection = directionMap[direction.toLowerCase()] || direction.toLowerCase(); // Normalize direction
+        const fullDirection = directionMap[direction.toLowerCase()] || direction.toLowerCase();
 
         const currentRoom = getCurrentRoom();
         const nextRoomId = currentRoom.exits[fullDirection];
 
         if (nextRoomId && rooms[nextRoomId]) {
-            // Special condition: Entering the attic without light
-            if (nextRoomId === 'attic' && !isLanternLit) {
-                 rooms.attic.description = "You stumble into a large, pitch-black attic space. You can't see a thing! Shapes loom nearby. Dust hangs heavy in the air. The stairs lead back DOWN.";
-            } else if (nextRoomId === 'attic' && isLanternLit) {
-                 rooms.attic.description = "Your lantern illuminates a large attic filled with forgotten furniture draped in white sheets. Dust motes dance in the beam. You see a loose floorboard in the far corner. The stairs lead back DOWN.";
-                 // Add floorboard object only when lit
-                 rooms.attic.objects['floorboard'] = "A section of the floor that looks pried up.";
+
+             // --- Monster Logic ---
+             if (nextRoomId === lastRoomId) { // Moving directly back
+                 backForthCounter++;
+             } else {
+                 backForthCounter = 0; // Reset counter if moving to a new room
+             }
+
+             if (backForthCounter >= 3 && monsterPresence < 2) {
+                 monsterPresence++; // Increase presence level
+                 message = monsterPresence === 1 ? "You feel a sudden chill, as if being watched..." : "The air grows heavy. A faint scratching sound echoes nearby...";
+                 backForthCounter = 0; // Reset counter after increasing presence
+             } else if (monsterPresence >= 2) {
+                 // If presence is already high, the next move triggers game over
+                 message = "The presence lunges from the shadows!";
+                 draw(); // Show the final message
+                 setTimeout(() => endGame(false), 1500); // Delay game over slightly
+                 return; // Stop further processing in this move
+             }
+             // --- End Monster Logic ---
+
+
+            // Store previous room *before* updating currentRoomId
+            lastRoomId = currentRoomId;
+            currentRoomId = nextRoomId; // Update current room
+
+            // Special room entry conditions
+            const newRoom = getCurrentRoom();
+            if (newRoom.id === 'attic') {
+                if (!isLanternLit) {
+                    newRoom.description = "You stumble into a large, pitch-black attic space. You can't see a thing! Shapes loom nearby, rustling softly. Dust hangs heavy, choking the air. The stairs lead back DOWN.";
+                    if(newRoom.objects['floorboard']) delete newRoom.objects['floorboard']; // Ensure floorboard is hidden
+                } else {
+                    newRoom.description = "Your lantern illuminates a large attic filled with forgotten furniture draped in white sheets. Dust motes dance in the beam. You see a loose floorboard in the far corner. The stairs lead back DOWN.";
+                    newRoom.objects['floorboard'] = "A section of the floor that looks pried up. Perhaps something is underneath?"; // Add floorboard object only when lit
+                }
             }
 
-            currentRoomId = nextRoomId;
-            message = ""; // Clear message on successful move
+            // Clear movement-related message only if not overridden by monster warning
+            if (!message.includes("chill") && !message.includes("heavy") && !message.includes("shadows")) {
+                 message = "";
+            }
+
         } else {
             message = "You can't go that way.";
+            backForthCounter = 0; // Reset counter on failed move
         }
-        draw(); // Redraw the scene
+        draw();
     }
 
     /**
-     * Handles looking around the room or examining specific objects/items.
-     * @param {string|null} noun - The specific thing to look at, or null to look around.
+     * Handles looking around or examining specific things.
      */
     function look(noun) {
+        if (gameOver) return;
         const room = getCurrentRoom();
         if (!noun) {
-            // General "look" - redraws the room description and lists items/exits
-            message = ""; // Clear any previous message like "You can't go that way"
-            draw(); // Use draw function which includes description, items, exits
+            message = ""; // Clear message on general look
+            draw();
         } else {
-            // Look at specific noun
             noun = noun.toLowerCase();
+            let found = false;
             if (room.objects && room.objects[noun]) {
-                message = room.objects[noun]; // Show description of scenery object
+                message = room.objects[noun];
+                found = true;
+                // Special examine actions
+                if (noun === 'floorboard' && currentRoomId === 'attic' && !room.items.includes('journal_page')) {
+                    message += " You pry it open and find a brittle JOURNAL PAGE tucked beneath!";
+                    room.items.push('journal_page');
+                    delete room.objects['floorboard']; // Remove floorboard object once opened
+                    room.objects['hole'] = "A hole in the floor where the loose board was. You already took the page.";
+                } else if (noun === 'markings' && currentRoomId === 'study' && mapExamined && !room.exits.east) {
+                    message = "Looking closely at the markings while remembering the map, you realize they trace a pattern matching a hidden door symbol! The bookshelf next to them looks like it could slide aside.";
+                    room.objects['markings'] = "Chalk markings forming a complex symbol. You now see how they indicate a hidden mechanism on the adjacent bookshelf.";
+                    room.objects['bookshelf'] = "A section of bookshelf next to the markings. It looks like it might move."; // Add specific bookshelf object
+                    // Add a temporary action or hint to 'push bookshelf' or similar
+                }
             } else if (room.items && room.items.includes(noun)) {
-                 // Basic description for items in the room
-                 message = `You see a ${noun} here.`;
-                 // Add more detailed descriptions if needed
-                 if (noun === 'key') message = "It's a small, rusty iron key.";
-                 if (noun === 'book') message = "It's a heavy tome bound in dark leather, open on the desk. A strange symbol is embossed on the cover.";
-                 if (noun === 'lantern') message = "An old brass lantern. It looks functional but needs fuel and a light.";
-                 if (noun === 'rope') message = "A sturdy coil of rope, about 30 feet long.";
-
+                message = `You see a ${noun} here.`;
+                // Add detailed descriptions
+                 if (noun === 'key') message = "It's a small, iron key, unnervingly cold to the touch.";
+                 if (noun === 'book') message = "A heavy tome bound in dark leather, open on the desk. A strange spiral symbol is embossed on the cover. The script inside is dense and unfamiliar.";
+                 if (noun === 'lantern') message = "An old brass lantern. It looks functional but tarnished. It feels slightly warm.";
+                 if (noun === 'rope') message = "A sturdy coil of rope, about 30 feet long. Smells faintly of mildew.";
+                 if (noun === 'map') message = "An old, hand-drawn map showing the house layout. Some areas, like the garden well and markings in the study, are circled.";
+                 if (noun === 'journal_page') message = "A brittle page torn from a journal. The handwriting is cramped and erratic.";
+                 if (noun === 'strange_device') message = "A bizarre device made of brass, crystal, and wires. It hums faintly with contained energy.";
+                found = true;
             } else if (inventory.includes(noun)) {
-                 // Basic description for items in inventory
-                 message = `You examine the ${noun} you are carrying.`;
-                 if (noun === 'key') message = "The small, rusty iron key. Wonder what it opens?";
-                 if (noun === 'book') message = "The heavy book. The symbol seems vaguely familiar, perhaps occult.";
-                 if (noun === 'lantern') message = `The brass lantern. It's currently ${isLanternLit ? 'lit' : 'unlit'}.`;
-                 if (noun === 'rope') message = "The sturdy coil of rope. Could be useful for climbing.";
-            } else {
+                message = `You examine the ${noun} you are carrying.`;
+                 if (noun === 'key') message = "The small, cold iron key. What lock awaits?";
+                 if (noun === 'book') message = "The heavy book. The spiral symbol seems to writhe if you stare too long.";
+                 if (noun === 'lantern') message = `The brass lantern. It's currently ${isLanternLit ? 'lit, casting a warm glow' : 'unlit and cool'}.`;
+                 if (noun === 'rope') message = "The sturdy coil of rope. Good for climbing or descending.";
+                 if (noun === 'map') {
+                     message = "Examining the map closely, you notice circles around the garden well location and faint markings drawn in the study. Perhaps they are important?";
+                     mapExamined = true; // Flag that the map's secrets are revealed
+                 }
+                 if (noun === 'journal_page') message = "A brittle journal page. You could try to READ it.";
+                 if (noun === 'strange_device') message = "The strange device hums in your hand. It feels like it wants to be activated, but how? And where?";
+                found = true;
+            }
+
+            // Handle examining things that might trigger actions/openings
+            if (noun === 'bookshelf' && currentRoomId === 'study' && mapExamined && room.objects['bookshelf'] && !room.exits.east) {
+                 message = "You push the bookshelf indicated by the markings. With a grinding sound, it slides aside revealing a dark passage heading EAST!";
+                 room.exits.east = 'hidden_passage'; // Open the passage
+                 room.description = "A smaller room, clearly a private study. There's a cold fireplace, an armchair, and bookshelves. One bookshelf stands askew, revealing a hidden passage EAST. A locked wooden chest sits beneath the window. The library is SOUTH.";
+                 delete room.objects['bookshelf']; // Remove the specific bookshelf object
+                 delete room.objects['markings']; // Remove markings object
+            } else if (noun === 'well' && currentRoomId === 'garden') {
+                 message = "A circular stone well with a heavy wooden cover. It looks deep. You might be able to USE ROPE ON WELL to descend.";
+                 found = true;
+            }
+
+
+            if (!found) {
                 message = `You don't see any "${noun}" here to examine.`;
             }
-            draw(); // Redraw to show the message
+            draw();
         }
     }
 
     /**
-     * Handles taking items from the room and adding them to inventory.
-     * @param {string} noun - The item to take.
+     * Handles taking items.
      */
     function take(noun) {
+        if (gameOver) return;
         const room = getCurrentRoom();
         noun = noun.toLowerCase();
 
-        if (room.items && room.items.includes(noun)) {
-            // Remove item from room
+        // Prevent taking scenery
+        if (room.objects && room.objects[noun]) {
+             message = `You can't take the ${noun}.`;
+        } else if (room.items && room.items.includes(noun)) {
             room.items = room.items.filter(item => item !== noun);
-            // Add item to inventory
             inventory.push(noun);
             message = `You take the ${noun}.`;
+            // Special case: taking the map from the chest
+            if (noun === 'map' && currentRoomId === 'study') {
+                 room.objects['chest'] = "A solid wooden chest. It's now unlocked and empty.";
+            }
         } else if (inventory.includes(noun)) {
              message = `You already have the ${noun}.`;
         } else {
@@ -279,23 +444,49 @@
     }
 
     /**
-     * Displays the player's inventory.
+     * Handles reading readable items.
+     * @param {string} noun - The item to read.
+     */
+    function read(noun) {
+        if (gameOver) return;
+        noun = noun.toLowerCase();
+
+        if (inventory.includes(noun)) {
+            if (noun === 'book') {
+                message = "You try to decipher the book. Much is incomprehensible, but you make out phrases like 'convergence', 'channeling energy', 'beyond the veil'. It mentions needing a 'focusing device' and a 'prepared space'.";
+            } else if (noun === 'journal_page') {
+                message = "The page reads: '...the final preparations are nearly complete. The device responded to the altar's energy! Just need to stabilize the matrix. The symbols must be exact. Elias Thorne - Entry 73'. The handwriting is frantic.";
+            } else if (noun === 'map') {
+                 message = "It's a hand-drawn map of the house. Circles highlight the garden well and markings in the study.";
+                 mapExamined = true;
+            } else {
+                message = `You can't read the ${noun}.`;
+            }
+        } else {
+            message = `You don't have a ${noun} to read.`;
+        }
+        draw();
+    }
+
+
+    /**
+     * Displays inventory.
      */
     function showInventory() {
+        if (gameOver) return;
         if (inventory.length === 0) {
             message = "You are not carrying anything.";
         } else {
-            message = "You are carrying: " + inventory.join(', ');
+            message = "You carry: " + inventory.join(', ');
         }
         draw();
     }
 
      /**
-     * Handles using items, potentially on objects or other items.
-     * @param {string} itemNoun - The item to use.
-     * @param {string|null} targetNoun - The target object/item to use the item on (optional).
+     * Handles using items.
      */
     function use(itemNoun, targetNoun = null) {
+        if (gameOver) return;
         itemNoun = itemNoun.toLowerCase();
         targetNoun = targetNoun ? targetNoun.toLowerCase() : null;
         const room = getCurrentRoom();
@@ -303,49 +494,70 @@
         if (!inventory.includes(itemNoun)) {
             message = `You don't have a ${itemNoun}.`;
         } else {
-            // Specific item uses
+            let used = false; // Flag to check if item was successfully used
+
+            // --- Specific Item Uses ---
             if (itemNoun === 'key') {
                 if (currentRoomId === 'study' && targetNoun === 'chest') {
                     if (room.objects['chest'] && room.objects['chest'].includes("locked")) {
-                         message = "You unlock the chest with the rusty key! Inside, you find an old map.";
-                         // Update chest description, add map to room items
+                         message = "You unlock the chest with the cold key! Inside, you find an old MAP.";
                          room.objects['chest'] = "A solid wooden chest. It's now unlocked.";
-                         if (!room.items.includes('map')) room.items.push('map'); // Add map if not already there
-                         // Remove key from inventory? Optional game design choice.
+                         if (!room.items.includes('map')) room.items.push('map');
+                         // Optional: remove key after use
                          // inventory = inventory.filter(item => item !== 'key');
-                    } else {
+                         used = true;
+                    } else if (room.objects['chest']) {
                          message = "The chest is already unlocked.";
+                         used = true;
                     }
-                } else {
-                    message = "You can't use the key on that.";
                 }
             } else if (itemNoun === 'lantern') {
-                 if (!isLanternLit) {
-                    message = "You light the lantern. It casts a warm glow.";
-                    isLanternLit = true;
-                    // Update room description if relevant (like entering attic)
-                    if(currentRoomId === 'attic') {
-                        rooms.attic.description = "Your lantern illuminates a large attic filled with forgotten furniture draped in white sheets. Dust motes dance in the beam. You see a loose floorboard in the far corner. The stairs lead back DOWN.";
-                        rooms.attic.objects['floorboard'] = "A section of the floor that looks pried up.";
-                    }
-                 } else {
-                     message = "You extinguish the lantern.";
-                     isLanternLit = false;
-                     // Update room description if relevant
-                     if(currentRoomId === 'attic') {
-                        rooms.attic.description = "You are in a large, dark attic space. Shapes loom in the darkness, covered in white sheets. Dust hangs heavy in the air. The stairs lead back DOWN.";
-                        delete rooms.attic.objects['floorboard']; // Remove object if light goes out
+                 // Use lantern (no target needed) toggles light
+                 if (!targetNoun) {
+                     if (!isLanternLit) {
+                        message = "You light the lantern. It casts a steady, warm glow, pushing back the shadows.";
+                        isLanternLit = true;
+                        // Update attic immediately if player is there
+                        if(currentRoomId === 'attic') {
+                            rooms.attic.description = "Your lantern illuminates a large attic filled with forgotten furniture draped in white sheets. Dust motes dance in the beam. You see a loose floorboard in the far corner. The stairs lead back DOWN.";
+                            rooms.attic.objects['floorboard'] = "A section of the floor that looks pried up. Perhaps something is underneath?";
+                        }
+                     } else {
+                         message = "You extinguish the lantern, plunging the surroundings back into gloom.";
+                         isLanternLit = false;
+                         // Update attic immediately
+                         if(currentRoomId === 'attic') {
+                            rooms.attic.description = "You stumble into a large, pitch-black attic space. You can't see a thing! Shapes loom nearby, rustling softly. Dust hangs heavy, choking the air. The stairs lead back DOWN.";
+                            delete rooms.attic.objects['floorboard'];
+                         }
                      }
+                     used = true;
                  }
-            } else if (itemNoun === 'book') {
-                 message = "You try to read the book, but the language is unfamiliar and disturbing.";
             } else if (itemNoun === 'rope') {
-                 // Example: Using rope in a specific room
-                 // if (currentRoomId === 'cliff_edge' && targetNoun === 'tree') { ... }
-                 message = "You coil the rope, ready to use it. Where would it be helpful?";
+                 if (currentRoomId === 'garden' && targetNoun === 'well') {
+                     message = "You securely tie the rope to the gnarled tree and lower the other end into the dark well. You can now go DOWN.";
+                     room.exits.down = 'well_room'; // Add temporary exit
+                     room.objects['well'] = "A circular stone well. Your rope now dangles into its depths.";
+                     room.objects['tree'] = "A large, ancient-looking oak. Your rope is securely tied to it.";
+                     // Remove rope from inventory? Or assume it stays tied? Let's keep it tied.
+                     // inventory = inventory.filter(item => item !== 'rope');
+                     used = true;
+                 }
+            } else if (itemNoun === 'strange_device') {
+                 if (currentRoomId === 'ritual_chamber' && (targetNoun === 'altar' || !targetNoun)) {
+                     message = "You place the device on the altar. It flares with blinding light as the symbols on the walls surge with power...";
+                     draw(); // Show message before ending
+                     setTimeout(() => endGame(true), 2500); // Win the game after a delay
+                     used = true;
+                 } else {
+                     message = "The device hums, but nothing happens when you try to use it here.";
+                     used = true;
+                 }
             }
-            else {
-                message = `You can't figure out how to use the ${itemNoun} ${targetNoun ? 'on the ' + targetNoun : 'here'}.`;
+            // --- End Specific Item Uses ---
+
+            if (!used) {
+                message = `You can't figure out how to use the ${itemNoun}${targetNoun ? ' on the ' + targetNoun : ' here'}.`;
             }
         }
         draw();
@@ -353,76 +565,121 @@
 
 
     /**
-     * Parses the player's input command into verb and noun(s).
-     * @param {string} input - The raw command string from the player.
+     * Parses the player's input command.
      */
     function parseCommand(input) {
-        message = ""; // Clear previous message on new command
-        const words = input.trim().toLowerCase().split(' ');
+        if (gameOver) return; // Stop processing if game over
+
+        message = ""; // Clear previous feedback message
+        const words = input.trim().toLowerCase().split(' ').filter(w => w !== ''); // Remove empty strings
+        if (words.length === 0) return; // Ignore empty input
+
         const verb = words[0];
         const noun1 = words[1];
-        const preposition = words[2]; // For commands like "use key on chest"
-        const noun2 = words[3];
+        const preposition = (words.length > 2 && (words[2] === 'on' || words[2] === 'in' || words[2] === 'at')) ? words[2] : null;
+        const noun2 = preposition ? words[3] : words[2]; // noun2 is word after preposition, or 3rd word if no preposition
 
-        // Handle movement commands (single word or "go [direction]")
+        // --- Command Handling ---
         const movementCommands = ['north', 'south', 'east', 'west', 'up', 'down', 'n', 's', 'e', 'w', 'u', 'd'];
         if (verb === 'go' && movementCommands.includes(noun1)) {
             move(noun1);
         } else if (movementCommands.includes(verb)) {
             move(verb);
         }
-        // Handle action commands
         else if (verb === 'look' || verb === 'examine' || verb === 'l') {
-            look(noun1); // noun1 might be undefined for general look
+            look(noun1); // Handles general look if noun1 is undefined
         } else if (verb === 'take' || verb === 'get') {
-            if (noun1) {
-                take(noun1);
-            } else {
-                message = "What do you want to take?";
-                draw();
-            }
+            if (noun1) take(noun1);
+            else message = "What do you want to take?";
+        } else if (verb === 'drop') { // Example: Adding a drop command
+             if (noun1 && inventory.includes(noun1)) {
+                 inventory = inventory.filter(item => item !== noun1);
+                 getCurrentRoom().items.push(noun1);
+                 message = `You drop the ${noun1}.`;
+             } else if (!noun1) {
+                 message = "What do you want to drop?";
+             } else {
+                 message = `You don't have a ${noun1} to drop.`;
+             }
         } else if (verb === 'inventory' || verb === 'i') {
             showInventory();
+        } else if (verb === 'read') {
+             if (noun1) read(noun1);
+             else message = "What do you want to read?";
         } else if (verb === 'use') {
-             if (noun1 && preposition === 'on' && noun2) {
-                 use(noun1, noun2); // e.g., use key on chest
-             } else if (noun1) {
-                 use(noun1); // e.g., use lantern
+             if (noun1 && preposition && noun2) use(noun1, noun2); // use key on chest
+             else if (noun1) use(noun1); // use lantern
+             else message = "What do you want to use?";
+        }
+        // --- Add more verbs here ---
+        else if (verb === 'push' || verb === 'move') { // Example: push bookshelf
+             if (noun1 === 'bookshelf' && currentRoomId === 'study' && mapExamined && getCurrentRoom().objects['bookshelf']) {
+                 look('bookshelf'); // Trigger the examine logic which opens the passage
              } else {
-                 message = "What do you want to use?";
-                 draw();
+                 message = "You can't move that.";
              }
         }
-        // Add more verbs here (read, open, talk, etc.)
         else {
-            message = "I don't understand that command.";
-            draw();
+            message = "I don't understand '" + input + "'. Try verbs like look, go, take, use, read, inventory.";
         }
+
+        // Redraw only if a message was generated or if no other function called draw
+        if (message) draw();
     }
 
 
     // --- Drawing Functions ---
 
-    function wrapText(context, text, x, y, maxWidth, lineHeight) {
-        // (Implementation unchanged from previous version)
+    /**
+     * Wraps text to fit within a specified width on the canvas.
+     * Draws the text line by line.
+     * @param {CanvasRenderingContext2D} context - The canvas rendering context.
+     * @param {string} text - The text to wrap and draw.
+     * @param {number} x - The starting X coordinate.
+     * @param {number} y - The starting Y coordinate for the first line.
+     * @param {number} maxWidth - The maximum width allowed for a line of text.
+     * @param {number} lineHeight - The vertical distance between lines.
+     * @param {string} [align='left'] - Text alignment ('left', 'center', 'right'). Default is 'left'.
+     * @returns {number} The Y coordinate after the last line of text was drawn.
+     */
+    function wrapText(context, text, x, y, maxWidth, lineHeight, align = 'left') {
         const words = text.split(' ');
         let line = '';
         let currentY = y;
-        context.textAlign = 'left';
+        // context.textAlign = align; // Set alignment passed to function
+
         for (let n = 0; n < words.length; n++) {
             const testLine = line + words[n] + ' ';
             const metrics = context.measureText(testLine);
             const testWidth = metrics.width;
+
             if (testWidth > maxWidth && n > 0) {
-                context.fillText(line, x, currentY);
+                // Calculate draw X based on alignment
+                let drawX = x;
+                if (align === 'center') {
+                    drawX = x + (maxWidth - context.measureText(line).width) / 2; // Center within maxWidth space
+                } else if (align === 'right') {
+                    drawX = x + maxWidth - context.measureText(line).width;
+                }
+                 // Ensure textAlign is set correctly for fillText itself
+                context.textAlign = align;
+                context.fillText(line.trim(), drawX, currentY); // Use trim() to remove trailing space
                 line = words[n] + ' ';
                 currentY += lineHeight;
             } else {
                 line = testLine;
             }
         }
-        context.fillText(line, x, currentY);
-        return currentY;
+        // Draw the last remaining line
+        let drawX = x;
+         if (align === 'center') {
+            drawX = x + (maxWidth - context.measureText(line).width) / 2;
+        } else if (align === 'right') {
+            drawX = x + maxWidth - context.measureText(line).width;
+        }
+        context.textAlign = align;
+        context.fillText(line.trim(), drawX, currentY);
+        return currentY; // Return the final Y position
     }
 
     function draw() {
@@ -432,33 +689,55 @@
         ctx.fillStyle = '#2a2a2a';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+        // Don't draw game elements if game is over (overlay handles it)
+        if (gameOver) return;
+
+        // Define common layout variables
+        const padding = 30;
+        const contentWidth = canvas.width - (padding * 2);
+        const lineHeight = 22;
+
         // --- Draw Room Name ---
         ctx.fillStyle = '#e0e0e0';
-        ctx.font = 'bold 24px "Segoe UI", sans-serif'; // Slightly smaller name
+        ctx.font = 'bold 24px "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(room.name, canvas.width / 2, 40);
+        ctx.fillText(room.name, canvas.width / 2, padding + 10); // Position name with padding
 
         // --- Draw Room Description ---
         ctx.font = '16px "Segoe UI", sans-serif';
-        const descriptionStartY = 75; // Start description higher
-        const descriptionMaxWidth = canvas.width - 60; // Margins
-        const lineHeight = 22; // Line height
-        let lastY = wrapText(ctx, room.description, 30, descriptionStartY, descriptionMaxWidth, lineHeight);
+        const descriptionStartY = 75;
+        let lastY = wrapText(ctx, room.description, padding, descriptionStartY, contentWidth, lineHeight, 'left'); // Use wrapText with left align
 
         // --- Draw Items in Room ---
         if (room.items && room.items.length > 0) {
             ctx.font = '15px "Segoe UI", sans-serif';
             lastY += lineHeight * 1.2; // Space before items
-            ctx.fillStyle = '#a0c0ff'; // Different color for items
-            ctx.textAlign = 'left';
-            wrapText(ctx, "You see here: " + room.items.join(', '), 30, lastY, descriptionMaxWidth, lineHeight);
+            ctx.fillStyle = '#a0c0ff'; // Item color
+            lastY = wrapText(ctx, "You see here: " + room.items.join(', '), padding, lastY, contentWidth, lineHeight, 'left'); // Use wrapText
             ctx.fillStyle = '#e0e0e0'; // Reset color
         }
 
+         // --- Draw Monster Warning ---
+         let warningY = canvas.height - 110; // Position for warnings
+         if (monsterPresence === 1 && !message.includes("chill") && !message.includes("watched")) {
+             ctx.font = 'italic bold 15px "Segoe UI", sans-serif';
+             ctx.fillStyle = '#ff8c8c'; // Warning color
+             ctx.textAlign = 'center';
+             ctx.fillText("You feel a chilling presence nearby...", canvas.width / 2, warningY);
+             ctx.fillStyle = '#e0e0e0'; // Reset color
+         } else if (monsterPresence === 2 && !message.includes("heavy") && !message.includes("scratching")) {
+             ctx.font = 'italic bold 15px "Segoe UI", sans-serif';
+             ctx.fillStyle = '#ff4d4d'; // Stronger warning color
+             ctx.textAlign = 'center';
+             ctx.fillText("The air is heavy. Something is close!", canvas.width / 2, warningY);
+             ctx.fillStyle = '#e0e0e0'; // Reset color
+         }
+
+
         // --- Draw Available Exits ---
         ctx.font = 'italic 15px "Segoe UI", sans-serif';
-        lastY = canvas.height - 80; // Position exits near the bottom
-        ctx.textAlign = 'left';
+        let exitsY = canvas.height - 80; // Position exits
+        ctx.textAlign = 'left'; // Keep exits left-aligned
         let exitsText = "Exits: ";
         const availableExits = [];
         if (room.exits.north) availableExits.push("North");
@@ -469,57 +748,69 @@
         if (room.exits.down) availableExits.push("Down");
 
         exitsText += availableExits.length > 0 ? availableExits.join(', ') : "None";
-        ctx.fillText(exitsText, 30, lastY);
+        // Use wrapText for exits in case the list gets very long on smaller screens (unlikely here, but good practice)
+        let exitsLastY = wrapText(ctx, exitsText, padding, exitsY, contentWidth, lineHeight, 'left');
+
 
          // --- Draw Feedback Message (if any) ---
-         lastY += lineHeight * 1.5; // Position message at the very bottom
+         let messageY = exitsLastY + lineHeight * 1.5; // Position message below exits
          if (message) {
-            ctx.fillStyle = '#ffcc8c'; // Message color (light orange/yellow)
+            // Determine color based on message type (heuristic)
+            if (message.includes("can't") || message.includes("don't understand") || message.includes("already")) ctx.fillStyle = '#ffcc8c'; // Yellowish for info/minor errors
+            else if (message.includes("take") || message.includes("unlock") || message.includes("light") || message.includes("drop") || message.includes("You carry")) ctx.fillStyle = '#a0ffc0'; // Greenish for success/inventory
+            else if (message.includes("chill") || message.includes("heavy") || message.includes("shadows")) ctx.fillStyle = '#ff8c8c'; // Reddish for danger
+            else ctx.fillStyle = '#e0e0e0'; // Default light color
+
             ctx.font = 'bold 16px "Segoe UI", sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText(message, canvas.width / 2, lastY);
+            // Use wrapText for the message, starting at the left padding
+            wrapText(ctx, message, padding, messageY, contentWidth, lineHeight, 'left');
         }
     }
 
     // --- Input Handling ---
-
-    // Handle Enter key in the input field
-    commandInput.addEventListener('keydown', (event) => {
+    // (Input handling functions remain unchanged)
+     commandInput.addEventListener('keydown', (event) => {
+        if (gameOver) return;
         if (event.key === 'Enter') {
             parseCommand(commandInput.value);
-            commandInput.value = ''; // Clear input field
-            event.preventDefault(); // Prevent default form submission
-        }
-        // Still allow arrow key navigation globally
-        else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
-             handleArrowKey(event);
+            commandInput.value = '';
+            event.preventDefault();
+        } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+             handleArrowKey(event); // Allow arrow keys within input
         }
     });
 
-    // Handle button click
     submitButton.addEventListener('click', () => {
+        if (gameOver) return;
         parseCommand(commandInput.value);
-        commandInput.value = ''; // Clear input field
+        commandInput.value = '';
     });
 
-    // Separate handler for arrow keys (can be called from input or window)
     function handleArrowKey(event) {
+         if (gameOver) return;
          let moved = false;
-         switch (event.key) {
-            case 'ArrowUp': move('north'); moved = true; break;
-            case 'ArrowDown': move('south'); moved = true; break;
-            case 'ArrowLeft': move('west'); moved = true; break;
-            case 'ArrowRight': move('east'); moved = true; break;
+         // Map arrows to directions, considering 'up'/'down' exits explicitly
+         const currentRoom = getCurrentRoom();
+         if (event.key === 'ArrowUp') {
+             if (currentRoom.exits.up) move('up'); else move('north');
+             moved = true;
+         } else if (event.key === 'ArrowDown') {
+             if (currentRoom.exits.down) move('down'); else move('south');
+             moved = true;
+         } else if (event.key === 'ArrowLeft') {
+             move('west'); moved = true;
+         } else if (event.key === 'ArrowRight') {
+             move('east'); moved = true;
          }
+
          if (moved) {
-            event.preventDefault(); // Prevent scrolling
+            event.preventDefault();
          }
     }
 
-    // Global listener for arrow keys (optional, but good backup)
     window.addEventListener('keydown', (event) => {
-        // Only handle arrows if the input field isn't focused,
-        // or handle them regardless (current setup handles in both places)
+        if (gameOver) return;
+        // Handle arrows globally only if input is not focused
         if (document.activeElement !== commandInput) {
              if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
                 handleArrowKey(event);
@@ -529,9 +820,10 @@
 
 
     // --- Initialization ---
+    // (Initialization remains unchanged)
     window.onload = () => {
         requestAnimationFrame(draw); // Initial draw
-        commandInput.focus(); // Focus the input field on load
+        commandInput.focus();
     };
 
 </script>
