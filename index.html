@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Canvas Text Adventure - Expanded</title>
+    <style>
+        /* Basic styling for the page */
+        body {
+            margin: 0;
+            padding: 20px; /* Add padding around content */
+            background-color: #1a1a1a; /* Dark background */
+            display: flex;
+            flex-direction: column; /* Stack canvas, input, instructions */
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh; /* Ensure full viewport height */
+            color: #e0e0e0; /* Light text color */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* Nicer default font */
+            box-sizing: border-box; /* Include padding in height calculation */
+        }
+        /* Style the canvas element */
+        canvas {
+            border: 2px solid #444; /* Slightly more prominent border */
+            background-color: #2a2a2a; /* Darker canvas background */
+            display: block; /* Prevents extra space below canvas */
+            max-width: 100%; /* Responsive width */
+            width: 800px; /* Fixed width */
+            height: 450px; /* Adjusted height */
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5); /* Add subtle shadow */
+            margin-bottom: 15px; /* Space below canvas */
+        }
+        /* Style for the input area */
+        #input-area {
+            display: flex; /* Align input and button horizontally */
+            width: 800px;
+            max-width: 100%;
+            margin-bottom: 15px; /* Space below input area */
+        }
+        #commandInput {
+            flex-grow: 1; /* Input takes available space */
+            padding: 10px;
+            border: 1px solid #444;
+            background-color: #333;
+            color: #e0e0e0;
+            font-size: 1em;
+            border-radius: 4px 0 0 4px; /* Rounded left corners */
+        }
+        #submitButton {
+            padding: 10px 15px;
+            border: 1px solid #444;
+            background-color: #555;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 1em;
+            border-left: none; /* Remove border between input and button */
+            border-radius: 0 4px 4px 0; /* Rounded right corners */
+            transition: background-color 0.2s;
+        }
+        #submitButton:hover {
+            background-color: #666;
+        }
+        /* Style for the instructions text */
+        #instructions {
+            color: #aaa;
+            font-size: 0.9em;
+            text-align: center; /* Center instructions */
+            width: 800px;
+            max-width: 100%;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas" width="800" height="450"></canvas>
+
+    <div id="input-area">
+        <input type="text" id="commandInput" placeholder="Type command (e.g., 'go north', 'take key', 'look')">
+        <button id="submitButton">Enter</button>
+    </div>
+
+    <div id="instructions">
+        Use commands like: <b>go [direction]</b> (or N, S, E, W), <b>look</b>, <b>examine [item/object]</b>, <b>take [item]</b>, <b>inventory</b> (or i). Press Enter or click the button to submit. Arrow keys still work for movement!
+    </div>
+
+<script>
+    // Get HTML elements
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const commandInput = document.getElementById('commandInput');
+    const submitButton = document.getElementById('submitButton');
+
+    // --- Game Data: Rooms, Items, Actions ---
+    const rooms = {
+        'start': {
+            id: 'start',
+            name: 'The Dusty Storeroom',
+            description: "You find yourself in a small, dusty storeroom. Cobwebs hang thickly in the corners. Light filters weakly through a grimy window high on the wall. There's a wooden door to the NORTH and an archway leading EAST. A small, rusty KEY lies on a crate.",
+            exits: { 'north': 'corridor', 'east': 'workshop', 'south': null, 'west': null },
+            items: ['key'], // Items currently in the room
+            objects: {'crate': "A sturdy wooden crate. The key was resting on it.", 'window': "Too high and grimy to see through clearly."} // Scenery objects to examine
+        },
+        'corridor': {
+            id: 'corridor',
+            name: 'Narrow Corridor',
+            description: "A long, narrow corridor stretches before you. The floorboards creak underfoot. Doors line the walls to the WEST and EAST. A faint draft comes from the NORTH, where you see rickety stairs leading up. The storeroom is SOUTH.",
+            exits: { 'north': 'attic_stairs', 'east': 'library', 'south': 'start', 'west': 'pantry' },
+            items: [],
+            objects: {'floorboards': "They look old and worn. One near the north end seems slightly loose.", 'draft': "It seems to be coming from upstairs."}
+        },
+        'pantry': {
+            id: 'pantry',
+            name: 'Empty Pantry',
+            description: "This was once a pantry, but the shelves are bare except for a thick layer of dust and a few broken jars. An old, unlit LANTERN sits on a bottom shelf. The corridor is back to the EAST.",
+            exits: { 'north': null, 'east': 'corridor', 'south': null, 'west': null },
+            items: ['lantern'],
+            objects: {'shelves': "Mostly empty, covered in dust.", 'jars': "Broken remnants of preserves, long gone."}
+        },
+        'library': {
+            id: 'library',
+            name: 'Quiet Library',
+            description: "Tall bookshelves filled with leather-bound books dominate this room. A large, ornate desk sits near a window overlooking a gloomy courtyard. A heavy BOOK with a strange symbol lies open on the desk. An exit leads WEST back to the corridor. There's another door to the NORTH.",
+            exits: { 'north': 'study', 'east': null, 'south': null, 'west': 'corridor' },
+            items: ['book'],
+            objects: {'bookshelves': "Many books look interesting, but most are crumbling.", 'desk': "A grand oak desk, surprisingly clean compared to the rest of the room.", 'window': "It overlooks a neglected courtyard garden.", 'symbol': "You recognize the symbol on the book."} // Hinting at the book
+        },
+        'workshop': {
+            id: 'workshop',
+            name: 'Abandoned Workshop',
+            description: "Tools hang rusting on the walls, and wood shavings litter the floor around a sturdy workbench. It seems deserted. An archway leads WEST back to the storeroom. A door leads SOUTH out into what looks like a garden.",
+            exits: { 'north': null, 'east': null, 'south': 'garden', 'west': 'start' },
+            items: [],
+            objects: {'tools': "Mostly rusted and useless.", 'workbench': "Covered in sawdust and old projects."}
+        },
+        'garden': {
+            id: 'garden',
+            name: 'Overgrown Garden',
+            description: "Weeds choke tangled rose bushes. A crumbling stone path leads EAST. The workshop door is NORTH. You notice a coil of ROPE half-buried near a large tree.",
+            exits: { 'north': 'workshop', 'east': 'path_end', 'south': null, 'west': null },
+            items: ['rope'],
+            objects: {'weeds': "A dense thicket of unwanted plants.", 'rose bushes': "Thorny and neglected.", 'tree': "A large, ancient-looking oak.", 'path': "Barely visible under the overgrowth."}
+        },
+        'path_end': {
+            id: 'path_end',
+            name: 'End of Garden Path',
+            description: "The stone path ends here at a moss-covered wall. There's nowhere else to go but WEST back along the path.",
+            exits: { 'north': null, 'east': null, 'south': null, 'west': 'garden' },
+            items: [],
+            objects: {'wall': "Old and damp, covered in moss. Seems solid."}
+        },
+        'study': {
+            id: 'study',
+            name: 'Dusty Study',
+            description: "A smaller room, clearly a private study. There's a fireplace, a comfortable-looking armchair, and more bookshelves. A locked wooden chest sits beneath the window. The library is SOUTH.",
+            exits: { 'north': null, 'east': null, 'south': 'library', 'west': null },
+            items: [],
+            objects: {'fireplace': "Cold and filled with ash.", 'armchair': "Looks surprisingly inviting.", 'bookshelves': "Contain more specialized texts than the library.", 'chest': "A solid wooden chest, firmly locked."}
+            // Action: 'open chest' needs 'key'
+        },
+        'attic_stairs': {
+            id: 'attic_stairs',
+            name: 'Rickety Attic Stairs',
+            description: "Narrow, steep stairs covered in dust and cobwebs lead upwards into darkness. It feels unstable. You can go back SOUTH to the corridor.",
+            exits: { 'north': 'attic', 'up': 'attic', 'south': 'corridor', 'down': 'corridor' }, // Added up/down
+            items: [],
+            objects: {'stairs': "They creak ominously with every step.", 'darkness': "Impossible to see what's up there."}
+            // Action: Need 'lantern' to proceed safely? Or just describe darkness in the attic.
+        },
+        'attic': {
+            id: 'attic',
+            name: 'Dark Attic',
+            description: "You are in a large, dark attic space. Shapes loom in the darkness, covered in white sheets. Dust hangs heavy in the air. The stairs lead back DOWN.",
+            // Description changes if lantern is lit
+            exits: { 'north': null, 'east': null, 'south': null, 'west': null, 'down': 'attic_stairs' },
+            items: [],
+            objects: {'shapes': "Furniture hidden under dust sheets.", 'sheets': "Old white dust sheets.", 'dust': "It's everywhere, making it hard to breathe."}
+        }
+    };
+
+    // --- Game State ---
+    let currentRoomId = 'start';
+    let message = ""; // Feedback messages
+    let inventory = []; // Player's inventory
+    let isLanternLit = false; // State for the lantern
+
+    // --- Game Logic Functions ---
+
+    function getCurrentRoom() {
+        return rooms[currentRoomId];
+    }
+
+    /**
+     * Handles movement commands (go direction, N, S, E, W, up, down).
+     * @param {string} direction - The direction ('north', 'south', etc.) or alias ('n', 's').
+     */
+    function move(direction) {
+        const directionMap = { 'n': 'north', 's': 'south', 'e': 'east', 'w': 'west', 'u': 'up', 'd': 'down' };
+        const fullDirection = directionMap[direction.toLowerCase()] || direction.toLowerCase(); // Normalize direction
+
+        const currentRoom = getCurrentRoom();
+        const nextRoomId = currentRoom.exits[fullDirection];
+
+        if (nextRoomId && rooms[nextRoomId]) {
+            // Special condition: Entering the attic without light
+            if (nextRoomId === 'attic' && !isLanternLit) {
+                 rooms.attic.description = "You stumble into a large, pitch-black attic space. You can't see a thing! Shapes loom nearby. Dust hangs heavy in the air. The stairs lead back DOWN.";
+            } else if (nextRoomId === 'attic' && isLanternLit) {
+                 rooms.attic.description = "Your lantern illuminates a large attic filled with forgotten furniture draped in white sheets. Dust motes dance in the beam. You see a loose floorboard in the far corner. The stairs lead back DOWN.";
+                 // Add floorboard object only when lit
+                 rooms.attic.objects['floorboard'] = "A section of the floor that looks pried up.";
+            }
+
+            currentRoomId = nextRoomId;
+            message = ""; // Clear message on successful move
+        } else {
+            message = "You can't go that way.";
+        }
+        draw(); // Redraw the scene
+    }
+
+    /**
+     * Handles looking around the room or examining specific objects/items.
+     * @param {string|null} noun - The specific thing to look at, or null to look around.
+     */
+    function look(noun) {
+        const room = getCurrentRoom();
+        if (!noun) {
+            // General "look" - redraws the room description and lists items/exits
+            message = ""; // Clear any previous message like "You can't go that way"
+            draw(); // Use draw function which includes description, items, exits
+        } else {
+            // Look at specific noun
+            noun = noun.toLowerCase();
+            if (room.objects && room.objects[noun]) {
+                message = room.objects[noun]; // Show description of scenery object
+            } else if (room.items && room.items.includes(noun)) {
+                 // Basic description for items in the room
+                 message = `You see a ${noun} here.`;
+                 // Add more detailed descriptions if needed
+                 if (noun === 'key') message = "It's a small, rusty iron key.";
+                 if (noun === 'book') message = "It's a heavy tome bound in dark leather, open on the desk. A strange symbol is embossed on the cover.";
+                 if (noun === 'lantern') message = "An old brass lantern. It looks functional but needs fuel and a light.";
+                 if (noun === 'rope') message = "A sturdy coil of rope, about 30 feet long.";
+
+            } else if (inventory.includes(noun)) {
+                 // Basic description for items in inventory
+                 message = `You examine the ${noun} you are carrying.`;
+                 if (noun === 'key') message = "The small, rusty iron key. Wonder what it opens?";
+                 if (noun === 'book') message = "The heavy book. The symbol seems vaguely familiar, perhaps occult.";
+                 if (noun === 'lantern') message = `The brass lantern. It's currently ${isLanternLit ? 'lit' : 'unlit'}.`;
+                 if (noun === 'rope') message = "The sturdy coil of rope. Could be useful for climbing.";
+            } else {
+                message = `You don't see any "${noun}" here to examine.`;
+            }
+            draw(); // Redraw to show the message
+        }
+    }
+
+    /**
+     * Handles taking items from the room and adding them to inventory.
+     * @param {string} noun - The item to take.
+     */
+    function take(noun) {
+        const room = getCurrentRoom();
+        noun = noun.toLowerCase();
+
+        if (room.items && room.items.includes(noun)) {
+            // Remove item from room
+            room.items = room.items.filter(item => item !== noun);
+            // Add item to inventory
+            inventory.push(noun);
+            message = `You take the ${noun}.`;
+        } else if (inventory.includes(noun)) {
+             message = `You already have the ${noun}.`;
+        } else {
+            message = `You don't see a ${noun} here to take.`;
+        }
+        draw();
+    }
+
+    /**
+     * Displays the player's inventory.
+     */
+    function showInventory() {
+        if (inventory.length === 0) {
+            message = "You are not carrying anything.";
+        } else {
+            message = "You are carrying: " + inventory.join(', ');
+        }
+        draw();
+    }
+
+     /**
+     * Handles using items, potentially on objects or other items.
+     * @param {string} itemNoun - The item to use.
+     * @param {string|null} targetNoun - The target object/item to use the item on (optional).
+     */
+    function use(itemNoun, targetNoun = null) {
+        itemNoun = itemNoun.toLowerCase();
+        targetNoun = targetNoun ? targetNoun.toLowerCase() : null;
+        const room = getCurrentRoom();
+
+        if (!inventory.includes(itemNoun)) {
+            message = `You don't have a ${itemNoun}.`;
+        } else {
+            // Specific item uses
+            if (itemNoun === 'key') {
+                if (currentRoomId === 'study' && targetNoun === 'chest') {
+                    if (room.objects['chest'] && room.objects['chest'].includes("locked")) {
+                         message = "You unlock the chest with the rusty key! Inside, you find an old map.";
+                         // Update chest description, add map to room items
+                         room.objects['chest'] = "A solid wooden chest. It's now unlocked.";
+                         if (!room.items.includes('map')) room.items.push('map'); // Add map if not already there
+                         // Remove key from inventory? Optional game design choice.
+                         // inventory = inventory.filter(item => item !== 'key');
+                    } else {
+                         message = "The chest is already unlocked.";
+                    }
+                } else {
+                    message = "You can't use the key on that.";
+                }
+            } else if (itemNoun === 'lantern') {
+                 if (!isLanternLit) {
+                    message = "You light the lantern. It casts a warm glow.";
+                    isLanternLit = true;
+                    // Update room description if relevant (like entering attic)
+                    if(currentRoomId === 'attic') {
+                        rooms.attic.description = "Your lantern illuminates a large attic filled with forgotten furniture draped in white sheets. Dust motes dance in the beam. You see a loose floorboard in the far corner. The stairs lead back DOWN.";
+                        rooms.attic.objects['floorboard'] = "A section of the floor that looks pried up.";
+                    }
+                 } else {
+                     message = "You extinguish the lantern.";
+                     isLanternLit = false;
+                     // Update room description if relevant
+                     if(currentRoomId === 'attic') {
+                        rooms.attic.description = "You are in a large, dark attic space. Shapes loom in the darkness, covered in white sheets. Dust hangs heavy in the air. The stairs lead back DOWN.";
+                        delete rooms.attic.objects['floorboard']; // Remove object if light goes out
+                     }
+                 }
+            } else if (itemNoun === 'book') {
+                 message = "You try to read the book, but the language is unfamiliar and disturbing.";
+            } else if (itemNoun === 'rope') {
+                 // Example: Using rope in a specific room
+                 // if (currentRoomId === 'cliff_edge' && targetNoun === 'tree') { ... }
+                 message = "You coil the rope, ready to use it. Where would it be helpful?";
+            }
+            else {
+                message = `You can't figure out how to use the ${itemNoun} ${targetNoun ? 'on the ' + targetNoun : 'here'}.`;
+            }
+        }
+        draw();
+    }
+
+
+    /**
+     * Parses the player's input command into verb and noun(s).
+     * @param {string} input - The raw command string from the player.
+     */
+    function parseCommand(input) {
+        message = ""; // Clear previous message on new command
+        const words = input.trim().toLowerCase().split(' ');
+        const verb = words[0];
+        const noun1 = words[1];
+        const preposition = words[2]; // For commands like "use key on chest"
+        const noun2 = words[3];
+
+        // Handle movement commands (single word or "go [direction]")
+        const movementCommands = ['north', 'south', 'east', 'west', 'up', 'down', 'n', 's', 'e', 'w', 'u', 'd'];
+        if (verb === 'go' && movementCommands.includes(noun1)) {
+            move(noun1);
+        } else if (movementCommands.includes(verb)) {
+            move(verb);
+        }
+        // Handle action commands
+        else if (verb === 'look' || verb === 'examine' || verb === 'l') {
+            look(noun1); // noun1 might be undefined for general look
+        } else if (verb === 'take' || verb === 'get') {
+            if (noun1) {
+                take(noun1);
+            } else {
+                message = "What do you want to take?";
+                draw();
+            }
+        } else if (verb === 'inventory' || verb === 'i') {
+            showInventory();
+        } else if (verb === 'use') {
+             if (noun1 && preposition === 'on' && noun2) {
+                 use(noun1, noun2); // e.g., use key on chest
+             } else if (noun1) {
+                 use(noun1); // e.g., use lantern
+             } else {
+                 message = "What do you want to use?";
+                 draw();
+             }
+        }
+        // Add more verbs here (read, open, talk, etc.)
+        else {
+            message = "I don't understand that command.";
+            draw();
+        }
+    }
+
+
+    // --- Drawing Functions ---
+
+    function wrapText(context, text, x, y, maxWidth, lineHeight) {
+        // (Implementation unchanged from previous version)
+        const words = text.split(' ');
+        let line = '';
+        let currentY = y;
+        context.textAlign = 'left';
+        for (let n = 0; n < words.length; n++) {
+            const testLine = line + words[n] + ' ';
+            const metrics = context.measureText(testLine);
+            const testWidth = metrics.width;
+            if (testWidth > maxWidth && n > 0) {
+                context.fillText(line, x, currentY);
+                line = words[n] + ' ';
+                currentY += lineHeight;
+            } else {
+                line = testLine;
+            }
+        }
+        context.fillText(line, x, currentY);
+        return currentY;
+    }
+
+    function draw() {
+        const room = getCurrentRoom();
+
+        // --- Clear Canvas ---
+        ctx.fillStyle = '#2a2a2a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // --- Draw Room Name ---
+        ctx.fillStyle = '#e0e0e0';
+        ctx.font = 'bold 24px "Segoe UI", sans-serif'; // Slightly smaller name
+        ctx.textAlign = 'center';
+        ctx.fillText(room.name, canvas.width / 2, 40);
+
+        // --- Draw Room Description ---
+        ctx.font = '16px "Segoe UI", sans-serif';
+        const descriptionStartY = 75; // Start description higher
+        const descriptionMaxWidth = canvas.width - 60; // Margins
+        const lineHeight = 22; // Line height
+        let lastY = wrapText(ctx, room.description, 30, descriptionStartY, descriptionMaxWidth, lineHeight);
+
+        // --- Draw Items in Room ---
+        if (room.items && room.items.length > 0) {
+            ctx.font = '15px "Segoe UI", sans-serif';
+            lastY += lineHeight * 1.2; // Space before items
+            ctx.fillStyle = '#a0c0ff'; // Different color for items
+            ctx.textAlign = 'left';
+            wrapText(ctx, "You see here: " + room.items.join(', '), 30, lastY, descriptionMaxWidth, lineHeight);
+            ctx.fillStyle = '#e0e0e0'; // Reset color
+        }
+
+        // --- Draw Available Exits ---
+        ctx.font = 'italic 15px "Segoe UI", sans-serif';
+        lastY = canvas.height - 80; // Position exits near the bottom
+        ctx.textAlign = 'left';
+        let exitsText = "Exits: ";
+        const availableExits = [];
+        if (room.exits.north) availableExits.push("North");
+        if (room.exits.south) availableExits.push("South");
+        if (room.exits.east) availableExits.push("East");
+        if (room.exits.west) availableExits.push("West");
+        if (room.exits.up) availableExits.push("Up");
+        if (room.exits.down) availableExits.push("Down");
+
+        exitsText += availableExits.length > 0 ? availableExits.join(', ') : "None";
+        ctx.fillText(exitsText, 30, lastY);
+
+         // --- Draw Feedback Message (if any) ---
+         lastY += lineHeight * 1.5; // Position message at the very bottom
+         if (message) {
+            ctx.fillStyle = '#ffcc8c'; // Message color (light orange/yellow)
+            ctx.font = 'bold 16px "Segoe UI", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(message, canvas.width / 2, lastY);
+        }
+    }
+
+    // --- Input Handling ---
+
+    // Handle Enter key in the input field
+    commandInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            parseCommand(commandInput.value);
+            commandInput.value = ''; // Clear input field
+            event.preventDefault(); // Prevent default form submission
+        }
+        // Still allow arrow key navigation globally
+        else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+             handleArrowKey(event);
+        }
+    });
+
+    // Handle button click
+    submitButton.addEventListener('click', () => {
+        parseCommand(commandInput.value);
+        commandInput.value = ''; // Clear input field
+    });
+
+    // Separate handler for arrow keys (can be called from input or window)
+    function handleArrowKey(event) {
+         let moved = false;
+         switch (event.key) {
+            case 'ArrowUp': move('north'); moved = true; break;
+            case 'ArrowDown': move('south'); moved = true; break;
+            case 'ArrowLeft': move('west'); moved = true; break;
+            case 'ArrowRight': move('east'); moved = true; break;
+         }
+         if (moved) {
+            event.preventDefault(); // Prevent scrolling
+         }
+    }
+
+    // Global listener for arrow keys (optional, but good backup)
+    window.addEventListener('keydown', (event) => {
+        // Only handle arrows if the input field isn't focused,
+        // or handle them regardless (current setup handles in both places)
+        if (document.activeElement !== commandInput) {
+             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+                handleArrowKey(event);
+             }
+        }
+    });
+
+
+    // --- Initialization ---
+    window.onload = () => {
+        requestAnimationFrame(draw); // Initial draw
+        commandInput.focus(); // Focus the input field on load
+    };
+
+</script>
+
+</body>
+</html>
+
